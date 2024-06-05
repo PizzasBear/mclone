@@ -1,0 +1,19 @@
+[package]
+name = "mclone"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wgpu = "0.12"
+winit = "0.26"
+log = "0.4"
+env_logger = "0.9"
+cgmath = "0.18"
+futures = "0.3"
+bytemuck = { version = "1.7", features = ["derive"] }
+image = "0.24"
+anyhow = "1.0"
+noise = "0.7"
+bitflags = "1.3"
