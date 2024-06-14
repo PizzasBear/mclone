@@ -28,17 +28,22 @@ impl Camera {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub view_proj: glam::Mat4,
+    pub view_pos: glam::Vec3,
+    pub _pad1: u32,
 }
 
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
             view_proj: glam::Mat4::IDENTITY,
+            view_pos: glam::Vec3::ZERO,
+            _pad1: 0,
         }
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera) {
         self.view_proj = camera.build_view_projection_matrix();
+        self.view_pos = camera.pos;
     }
 }
 
@@ -47,6 +52,8 @@ pub struct CameraController {
     sensitivity: f32,
     vel: glam::Vec3,
     im_vel: glam::Vec3,
+
+    ang_vel: glam::Vec2,
 }
 
 impl CameraController {
@@ -56,16 +63,16 @@ impl CameraController {
             sensitivity,
             vel: glam::Vec3::ZERO,
             im_vel: glam::Vec3::ZERO,
+
+            ang_vel: glam::Vec2::ZERO,
         }
     }
 
-    pub fn device_event(&mut self, event: &DeviceEvent, camera: &mut Camera) -> bool {
+    pub fn device_event(&mut self, event: &DeviceEvent) -> bool {
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                camera.rot.x += delta.1 as f32 * self.sensitivity;
-                camera.rot.y -= delta.0 as f32 * self.sensitivity;
-
-                camera.rot %= 360.0;
+                self.ang_vel.x += delta.1 as f32 * self.sensitivity;
+                self.ang_vel.y -= delta.0 as f32 * self.sensitivity;
 
                 true
             }
@@ -115,14 +122,21 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &mut Camera) {
+    pub fn update_camera(&mut self, delta_time: f32, camera: &mut Camera) {
         let dvel = self.im_vel - self.vel;
-        if 0.1 < dvel.length() {
-            self.vel += (self.im_vel - self.vel).normalize() * 0.04;
+        let dvel_len = dvel.length();
+        if 0.1 < dvel_len {
+            self.vel += (delta_time * 10.0 / dvel_len).min(0.96875) * dvel;
         } else {
             self.vel = self.im_vel;
         }
         let rot_vel = glam::Quat::from_rotation_y(camera.rot.y.to_radians()) * self.vel;
-        camera.pos += self.speed * rot_vel;
+        camera.pos += delta_time * self.speed * rot_vel;
+
+        camera.rot += self.ang_vel / 100.0;
+        self.ang_vel = glam::Vec2::ZERO;
+
+        camera.rot.y %= 360.0;
+        camera.rot.x = camera.rot.x.clamp(-89.0, 89.0);
     }
 }
