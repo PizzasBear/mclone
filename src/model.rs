@@ -5,16 +5,7 @@ use futures::future::OptionFuture;
 use tokio::{fs, io::AsyncReadExt};
 use wgpu::util::DeviceExt;
 
-use crate::texture::Texture;
-
-pub trait VertexBuffer: Sized {
-    type Raw: Copy + bytemuck::Pod + bytemuck::Zeroable;
-    fn to_raw(&self) -> Self::Raw;
-    fn into_raw(self) -> Self::Raw {
-        self.to_raw()
-    }
-    const DESC: wgpu::VertexBufferLayout<'static>;
-}
+use crate::{graphics::VertexBuffer, texture::Texture};
 
 #[repr(C, packed(4))]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -57,8 +48,10 @@ impl VertexBuffer for Instance {
         }
     }
 
-    const DESC: wgpu::VertexBufferLayout<'static> = {
-        const ATTRS: &[wgpu::VertexAttribute] = &wgpu::vertex_attr_array![
+    const DESC: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: mem::size_of::<InstanceRaw>() as _,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array![
             5 => Float32x4,
             6 => Float32x4,
             7 => Float32x4,
@@ -66,12 +59,7 @@ impl VertexBuffer for Instance {
             9 => Float32x3,
             10 => Float32x3,
             11 => Float32x3,
-        ];
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as _,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: ATTRS,
-        }
+        ],
     };
 }
 
@@ -89,18 +77,15 @@ impl VertexBuffer for Vertex {
     fn to_raw(&self) -> Self {
         *self
     }
-    const DESC: wgpu::VertexBufferLayout<'static> = {
-        const ATTRS: &[wgpu::VertexAttribute] = &wgpu::vertex_attr_array![
+    const DESC: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: mem::size_of::<Vertex>() as _,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &wgpu::vertex_attr_array![
             0 => Float32x3, // position
             1 => Float32x2, // tex_coords
             2 => Float32x3, // normal
             3 => Float32x3, // tangent
-        ];
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as _,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: ATTRS,
-        }
+        ],
     };
 }
 #[derive(Debug)]
@@ -412,10 +397,6 @@ impl Model {
                 let has_tex_coords = !vertices.iter().all(|v| v.tex_coords == glam::Vec2::ZERO);
                 let has_normals = !vertices.iter().any(|v| v.normal == glam::Vec3::ZERO);
 
-                println!(
-                    "Mesh {} has_tex_coords={} has_normals={}",
-                    obj_model.name, has_tex_coords, has_normals
-                );
                 for tri in obj_model.mesh.indices.chunks(3) {
                     let [i0, i1, i2] = [tri[0] as usize, tri[1] as usize, tri[2] as usize];
                     let [v0, v1, v2] = [vertices[i0], vertices[i1], vertices[i2]];

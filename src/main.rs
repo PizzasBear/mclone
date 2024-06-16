@@ -11,31 +11,16 @@ use winit::{
 };
 
 use camera::{Camera, CameraController, CameraUniform};
-use model::VertexBuffer;
+use graphics::VertexBuffer;
 use texture::Texture;
+use world::World;
 
-mod camera;
-mod model;
-mod texture;
-
-macro_rules! inline_const {
-    (($expr:expr) as $ty:ty) => {{
-        const C: $ty = $expr;
-        C
-    }};
-    ($block:block as $ty:ty) => {
-        inline_const!(($block) as $ty)
-    };
-    ([$($tt:tt)*] as $ty:ty) => {
-        inline_const!(([$($tt)*]) as $ty)
-    };
-    (&[$($tt:tt)*] as $ty:ty) => {
-        inline_const!((&[$($tt)*]) as $ty)
-    };
-    ($lit:literal as $ty:ty) => {
-        inline_const!(($lit) as $ty)
-    };
-}
+pub mod camera;
+pub mod graphics;
+pub mod gui;
+pub mod model;
+pub mod texture;
+pub mod world;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -70,6 +55,11 @@ struct GraphicsState {
     model: model::Model,
     instance_buffer: wgpu::Buffer,
     num_instances: u32,
+
+    world: World,
+
+    gui: gui::Gui,
+    sprite: gui::Sprite,
 }
 
 impl GraphicsState {
@@ -203,54 +193,11 @@ impl GraphicsState {
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "Depth Texture");
 
-        let create_render_pipeline = |label, layout, buffers, shader| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers,
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Texture::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-            })
-        };
-
-        let render_pipeline = create_render_pipeline(
+        let render_pipeline = graphics::create_render_pipeline(
+            &device,
+            &config,
             "Render Pipeline",
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &material_layout,
@@ -259,22 +206,20 @@ impl GraphicsState {
                 ],
                 push_constant_ranges: &[],
             }),
-            inline_const!(
-                &[model::Vertex::DESC, model::Instance::DESC] as &[wgpu::VertexBufferLayout]
-            ),
-            device.create_shader_module(wgpu::include_wgsl!("shader.wgsl")),
+            &[model::Vertex::DESC, model::Instance::DESC],
+            &device.create_shader_module(wgpu::include_wgsl!("shader.wgsl")),
         );
-        let light_render_pipeline = create_render_pipeline(
+        let light_render_pipeline = graphics::create_render_pipeline(
+            &device,
+            &config,
             "Light Render Pipeline",
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Light Render Pipeline Layout"),
                 bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
                 push_constant_ranges: &[],
             }),
-            inline_const!(
-                &[model::Vertex::DESC, model::Instance::DESC] as &[wgpu::VertexBufferLayout]
-            ),
-            device.create_shader_module(wgpu::include_wgsl!("light.wgsl")),
+            &[model::Vertex::DESC, model::Instance::DESC],
+            &device.create_shader_module(wgpu::include_wgsl!("light.wgsl")),
         );
 
         let model = model::Model::load("res/models/monkey.obj", &device, &queue, &material_layout)
@@ -311,6 +256,30 @@ impl GraphicsState {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let world = World::new(
+            &device,
+            &queue,
+            &config,
+            &camera_bind_group_layout,
+            &light_bind_group_layout,
+        )
+        .await
+        .unwrap();
+
+        let gui = gui::Gui::new(&device, &config, window.inner_size());
+        let sprite = gui::Sprite::new(
+            &device,
+            &gui,
+            texture::Texture::load(&device, &queue, "res/images/cross.png", false, "Cross")
+                .await
+                .unwrap(),
+            gui::Instance {
+                position: glam::Vec3::new(0.0, 0.0, 0.0),
+                scale: 32. * glam::Vec2::ONE,
+                angle: 0.0,
+            },
+        );
+
         Self {
             size,
             window,
@@ -335,6 +304,10 @@ impl GraphicsState {
             model,
             instance_buffer,
             num_instances: instances.len() as _,
+
+            world,
+            gui,
+            sprite,
         }
     }
 
@@ -362,6 +335,7 @@ impl GraphicsState {
         self.depth_texture =
             Texture::create_depth_texture(&self.device, &self.config, "Depth Texture");
 
+        self.gui.resize(&self.queue, new_size);
         self.camera.aspect = new_size.width as f32 / new_size.height as f32;
         self.update_camera_uniform();
     }
@@ -426,6 +400,15 @@ impl GraphicsState {
         render_pass.set_bind_group(1, &self.light_bind_group, &[]);
 
         self.model.meshes[0].draw(&mut render_pass, 0..1);
+
+        self.world.draw(
+            &self.device,
+            &mut render_pass,
+            &self.camera_bind_group,
+            &self.light_bind_group,
+        );
+
+        self.sprite.draw(&mut render_pass, &self.gui);
 
         drop(render_pass);
 
