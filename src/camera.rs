@@ -14,11 +14,13 @@ pub struct Camera {
 }
 
 impl Camera {
-    fn build_view_projection_matrix(&self) -> glam::Mat4 {
+    pub fn dir(&self) -> glam::Vec3 {
         let (sin_x, cos_x) = self.rot.x.to_radians().sin_cos();
         let (sin_y, cos_y) = self.rot.y.to_radians().sin_cos();
-        let dir = glam::vec3(cos_x * sin_y, sin_x, cos_x * cos_y);
-        let view = glam::Mat4::look_to_rh(self.pos, -dir, glam::Vec3::Y);
+        -glam::vec3(cos_x * sin_y, sin_x, cos_x * cos_y)
+    }
+    fn build_view_projection_matrix(&self) -> glam::Mat4 {
+        let view = glam::Mat4::look_to_rh(self.pos, self.dir(), glam::Vec3::Y);
         let proj = glam::Mat4::perspective_rh(self.fovy, self.aspect, self.znear, self.zfar);
         proj * view
     }
@@ -86,38 +88,44 @@ impl CameraController {
                 event:
                     KeyEvent {
                         physical_key,
-                        state: key_state,
+                        state,
                         repeat: false,
                         ..
                     },
                 ..
-            } => match physical_key {
-                PhysicalKey::Code(KeyCode::KeyW | KeyCode::ArrowUp) => {
-                    self.im_vel.z -= (1 - 2 * *key_state as i8) as f32;
-                    true
+            } => {
+                let offset = match state {
+                    ElementState::Pressed => 1.0,
+                    ElementState::Released => -1.0,
+                };
+                match physical_key {
+                    PhysicalKey::Code(KeyCode::KeyW | KeyCode::ArrowUp) => {
+                        self.im_vel.z = (self.im_vel.z - offset).clamp(-1.0, 1.0);
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::KeyS | KeyCode::ArrowDown) => {
+                        self.im_vel.z = (self.im_vel.z + offset).clamp(-1.0, 1.0);
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::KeyA | KeyCode::ArrowLeft) => {
+                        self.im_vel.x = (self.im_vel.x - offset).clamp(-1.0, 1.0);
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::KeyD | KeyCode::ArrowRight) => {
+                        self.im_vel.x = (self.im_vel.x + offset).clamp(-1.0, 1.0);
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::Space) => {
+                        self.im_vel.y = (self.im_vel.y + offset).clamp(-1.0, 1.0);
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::ShiftLeft) => {
+                        self.im_vel.y = (self.im_vel.y - offset).clamp(-1.0, 1.0);
+                        true
+                    }
+                    _ => false,
                 }
-                PhysicalKey::Code(KeyCode::KeyS | KeyCode::ArrowDown) => {
-                    self.im_vel.z += (1 - 2 * *key_state as i8) as f32;
-                    true
-                }
-                PhysicalKey::Code(KeyCode::KeyA | KeyCode::ArrowLeft) => {
-                    self.im_vel.x -= (1 - 2 * *key_state as i8) as f32;
-                    true
-                }
-                PhysicalKey::Code(KeyCode::KeyD | KeyCode::ArrowRight) => {
-                    self.im_vel.x += (1 - 2 * *key_state as i8) as f32;
-                    true
-                }
-                PhysicalKey::Code(KeyCode::Space) => {
-                    self.im_vel.y += (1 - 2 * *key_state as i8) as f32;
-                    true
-                }
-                PhysicalKey::Code(KeyCode::ShiftLeft) => {
-                    self.im_vel.y -= (1 - 2 * *key_state as i8) as f32;
-                    true
-                }
-                _ => false,
-            },
+            }
             _ => false,
         }
     }

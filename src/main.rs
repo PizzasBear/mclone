@@ -485,6 +485,13 @@ impl ApplicationHandler for App {
         }
         if self.camera_controller.window_event(&event) {
             return;
+        } else if graphics.world.window_event(
+            &graphics.device,
+            &graphics.queue,
+            &graphics.camera,
+            &event,
+        ) {
+            return;
         }
         match event {
             WindowEvent::CloseRequested
