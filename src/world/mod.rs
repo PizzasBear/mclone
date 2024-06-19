@@ -1,5 +1,3 @@
-use std::mem;
-
 use ahash::HashMap;
 use anyhow::*;
 use wgpu::util::DeviceExt;
@@ -237,14 +235,14 @@ impl World {
         }
 
         loop {
-            tracing::info!("Raycast: pos={pos}  ipos={ipos}  dir={direction}");
+            // tracing::info!("Raycast: pos={pos}  ipos={ipos}  dir={direction}");
             let dx = dist_to_whole(pos.x, direction.x);
             let dy = dist_to_whole(pos.y, direction.y);
             let dz = dist_to_whole(pos.z, direction.z);
 
             let block_face;
             if dx < dy && dx < dz {
-                tracing::info!("Raycast[dx]:  dx={dx}  dy={dy}  dz={dz}");
+                // tracing::info!("Raycast[dx]:  dx={dx}  dy={dy}  dz={dz}");
                 pos += direction * dx;
                 ipos.x += direction.x.signum() as i32;
                 block_face = match 0.0 < direction.x {
@@ -252,7 +250,7 @@ impl World {
                     false => BlockFace::Right,
                 };
             } else if dy < dz {
-                tracing::info!("Raycast[dy]:  dx={dx}  dy={dy}  dz={dz}");
+                // tracing::info!("Raycast[dy]:  dx={dx}  dy={dy}  dz={dz}");
                 pos += direction * dy;
                 ipos.y += direction.y.signum() as i32;
                 block_face = match 0.0 < direction.y {
@@ -260,7 +258,7 @@ impl World {
                     false => BlockFace::Top,
                 };
             } else {
-                tracing::info!("Raycast[dz]:  dx={dx}  dy={dy}  dz={dz}");
+                // tracing::info!("Raycast[dz]:  dx={dx}  dy={dy}  dz={dz}");
                 pos += direction * dz;
                 ipos.z += direction.z.signum() as i32;
                 block_face = match 0.0 < direction.z {
@@ -270,7 +268,7 @@ impl World {
             }
 
             if max_distance * max_distance < origin.distance_squared(pos) {
-                tracing::info!("Raycast[max distance reached at]:  origin={origin} pos={pos}");
+                // tracing::info!("Raycast[max distance reached at]:  origin={origin} pos={pos}");
                 break None;
             }
 
@@ -287,9 +285,9 @@ impl World {
             let block = &chunk.blocks[block_i];
 
             if block.id != 0 {
-                tracing::info!(
-                    "Raycast[hit block]:  pos={pos}  ipos={ipos}  chunk_pos={chunk_pos}"
-                );
+                // tracing::info!(
+                //     "Raycast[hit block]:  pos={pos}  ipos={ipos}  chunk_pos={chunk_pos}"
+                // );
                 break Some((chunk_i, block_i, block_face));
             }
         }
@@ -341,7 +339,7 @@ impl World {
                 state: ElementState::Pressed,
                 ..
             } => {
-                tracing::info!("Button event: {:?}", event);
+                // tracing::info!("Button event: {:?}", event);
                 if let Some((chunk_i, block_i, face)) = self.raycast(cam.pos, cam.dir(), 6.0) {
                     let Some(block_i) = block_i.checked_add_signed(face.ioffset()) else {
                         return true;
@@ -362,7 +360,7 @@ impl World {
                 state: ElementState::Pressed,
                 ..
             } => {
-                tracing::info!("Button event: {:?}", event);
+                // tracing::info!("Button event: {:?}", event);
                 if let Some((chunk_i, block_i, face)) = self.raycast(cam.pos, cam.dir(), 6.0) {
                     self.loaded_chunks[chunk_i].place_block(
                         device,

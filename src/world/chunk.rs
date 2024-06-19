@@ -86,14 +86,14 @@ impl BlockFace {
         }
     }
 
-    pub fn voffset(self) -> glam::Vec3 {
+    pub fn voffset(self) -> glam::IVec3 {
         match self {
-            Self::Right => glam::vec3(1.0, 0.0, 0.0),
-            Self::Left => glam::vec3(-1.0, 0.0, 0.0),
-            Self::Top => glam::vec3(0.0, 1.0, 0.0),
-            Self::Bottom => glam::vec3(0.0, -1.0, 0.0),
-            Self::Front => glam::vec3(0.0, 0.0, -1.0),
-            Self::Back => glam::vec3(0.0, 0.0, 1.0),
+            Self::Right => glam::IVec3::X,
+            Self::Left => -glam::IVec3::X,
+            Self::Top => glam::IVec3::Y,
+            Self::Bottom => -glam::IVec3::Y,
+            Self::Front => -glam::IVec3::Z,
+            Self::Back => glam::IVec3::Z,
         }
     }
     pub fn try_from_dir(dir: glam::Vec3) -> Option<Self> {
@@ -382,52 +382,19 @@ impl Chunk {
             (true, true) => {}
             (true, false) => {
                 // place block
-                tracing::info!("Placing block at {:?}", pos);
+                // tracing::info!("Placing block at {:?}", pos);
 
                 for face in BlockFace::iter() {
                     match idx
                         .checked_add_signed(face.ioffset())
                         .filter(|_| !face.is_edge(idx))
-                        .and_then(|j| self.blocks.get_mut(j))
+                        .and_then(|j| Some((j, self.blocks.get(j)?)))
                     {
-                        Some(neighbour) if !neighbour.data(reg).is_transparent() => {
-                            let Some(face_i) = neighbour.face(face.flip()) else {
-                                continue;
-                            };
-                            neighbour.set_face(face.flip(), None);
-                            self.vertices.swap_remove(face_i);
-                            if face_i == self.vertices.len() {
-                                continue;
-                            }
-                            let vertices = self.vertices[face_i];
-                            let dir = (vertices[1].position - vertices[0].position)
-                                .cross(vertices[2].position - vertices[0].position);
-                            let middle =
-                                vertices.iter().map(|v| v.position).sum::<glam::Vec3>() / 4.0;
-                            let pos = middle - 0.5 * dir.normalize();
-                            tracing::info!(
-                                "vertices={:?} middle={middle} dir={dir} pos={pos}",
-                                vertices.map(|v| v.position)
-                            );
-                            let idx = Self::block_pos_to_idx(pos.as_uvec3());
-                            let face = BlockFace::try_from_dir(dir).unwrap();
-                            debug_assert_eq!(
-                                self.blocks[idx].face(face),
-                                Some(self.vertices.len())
-                            );
-                            self.blocks[idx].set_face(face, Some(face_i as _));
-                            let bytes = bytemuck::cast_slice(&vertices);
-                            queue.write_buffer(vertex_buffer, (bytes.len() * face_i) as _, bytes);
+                        Some((j, neighbour)) if !neighbour.data(reg).is_transparent() => {
+                            self.remove_face(queue, j, face.flip());
                         }
                         _ => {
-                            let block = &mut self.blocks[idx];
-                            let face_i = self.vertices.len();
-                            block.set_face(face, Some(face_i as _));
-
-                            let vertices = block.gen_face(reg, pos, face);
-                            self.vertices.push(vertices);
-                            let bytes = bytemuck::cast_slice(&vertices);
-                            queue.write_buffer(vertex_buffer, (bytes.len() * face_i) as _, bytes);
+                            self.add_face(queue, reg, idx, face);
                         }
                     }
                 }
@@ -435,52 +402,18 @@ impl Chunk {
             (false, true) => {
                 // remove block
 
-                tracing::info!("Removing block at {:?}", pos);
+                // tracing::info!("Removing block at {:?}", pos);
                 for face in BlockFace::iter() {
                     match idx
                         .checked_add_signed(face.ioffset())
                         .filter(|_| !face.is_edge(idx))
-                        .and_then(|j| self.blocks.get_mut(j))
+                        .and_then(|j| Some((j, self.blocks.get(j)?)))
                     {
-                        Some(neighbour) if !neighbour.data(reg).is_transparent() => {
-                            let face_i = self.vertices.len();
-                            neighbour.set_face(face.flip(), Some(face_i as _));
-
-                            let vertices =
-                                neighbour.gen_face(reg, pos + face.voffset(), face.flip());
-                            self.vertices.push(vertices);
-                            let bytes = bytemuck::cast_slice(&vertices);
-                            queue.write_buffer(vertex_buffer, (bytes.len() * face_i) as _, bytes);
+                        Some((j, neighbour)) if !neighbour.data(reg).is_transparent() => {
+                            self.add_face(queue, reg, j, face.flip());
                         }
                         _ => {
-                            let block = &mut self.blocks[idx];
-                            let Some(face_i) = block.face(face) else {
-                                continue;
-                            };
-                            block.set_face(face, None);
-                            self.vertices.swap_remove(face_i);
-                            if face_i == self.vertices.len() {
-                                continue;
-                            }
-                            let vertices = self.vertices[face_i];
-                            let dir = (vertices[1].position - vertices[0].position)
-                                .cross(vertices[2].position - vertices[0].position);
-                            let middle =
-                                vertices.iter().map(|v| v.position).sum::<glam::Vec3>() / 4.0;
-                            let pos = middle - 0.5 * dir.normalize();
-                            tracing::info!(
-                                "vertices={:?} middle={middle} dir={dir} pos={pos}",
-                                vertices.map(|v| v.position)
-                            );
-                            let idx = Self::block_pos_to_idx(pos.as_uvec3());
-                            let face = BlockFace::try_from_dir(dir).unwrap();
-                            debug_assert_eq!(
-                                self.blocks[idx].face(face),
-                                Some(self.vertices.len())
-                            );
-                            self.blocks[idx].set_face(face, Some(face_i as _));
-                            let bytes = bytemuck::cast_slice(&vertices);
-                            queue.write_buffer(vertex_buffer, (bytes.len() * face_i) as _, bytes);
+                            self.remove_face(queue, idx, face);
                         }
                     }
                 }
@@ -488,7 +421,7 @@ impl Chunk {
             (false, false) => {
                 // replace block
 
-                tracing::info!("Replacing block at {:?}", pos);
+                // tracing::info!("Replacing block at {:?}", pos);
                 let block = &self.blocks[idx];
                 for face in BlockFace::iter() {
                     let Some(face_i) = block.face(face) else {
@@ -503,6 +436,61 @@ impl Chunk {
                 }
             }
         }
+    }
+
+    /// Prior to calling this function, call `recreate_buffers_if_full` to ensure that the buffers are large enough
+    pub fn add_face(
+        &mut self,
+        queue: &wgpu::Queue,
+        reg: &BlockRegistry,
+        idx: usize,
+        face: BlockFace,
+    ) {
+        let Some(vertex_buffer) = &self.vertex_buffer else {
+            return;
+        };
+
+        let block = &mut self.blocks[idx];
+
+        let face_i = self.vertices.len();
+        block.set_face(face, Some(face_i as _));
+
+        let vertices = block.gen_face(reg, Self::block_idx_to_pos(idx).as_vec3(), face);
+        self.vertices.push(vertices);
+        let bytes = bytemuck::cast_slice(&vertices);
+        queue.write_buffer(vertex_buffer, (bytes.len() * face_i) as _, bytes);
+    }
+
+    pub fn remove_face(&mut self, queue: &wgpu::Queue, idx: usize, face: BlockFace) {
+        let Some(vertex_buffer) = &self.vertex_buffer else {
+            return;
+        };
+
+        let block = &mut self.blocks[idx];
+        let Some(face_i) = block.face(face) else {
+            return;
+        };
+        block.set_face(face, None);
+        self.vertices.swap_remove(face_i);
+
+        if face_i == self.vertices.len() {
+            return;
+        }
+
+        let vertices = self.vertices[face_i];
+        let dir = (vertices[1].position - vertices[0].position)
+            .cross(vertices[2].position - vertices[0].position);
+        let middle = vertices.iter().map(|v| v.position).sum::<glam::Vec3>() / 4.0;
+        let pos = middle - 0.5 * dir.normalize();
+
+        let idx = Self::block_pos_to_idx(pos.as_uvec3());
+        let face = BlockFace::try_from_dir(dir).unwrap();
+
+        debug_assert_eq!(self.blocks[idx].face(face), Some(self.vertices.len()));
+        self.blocks[idx].set_face(face, Some(face_i as _));
+
+        let bytes = bytemuck::cast_slice(&vertices);
+        queue.write_buffer(vertex_buffer, (bytes.len() * face_i) as _, bytes);
     }
 
     pub fn gen_mesh(&mut self, device: &wgpu::Device, reg: &BlockRegistry) {
@@ -541,7 +529,14 @@ impl Chunk {
             return;
         }
 
-        let face_capacity = (self.vertices.len() * 3 / 2).max(1024);
+        let face_capacity = (self.vertices.len() * 5 / 4).max(1024);
+
+        tracing::info!(
+            "Recreating buffers with face capacity {face_capacity} from {:?}",
+            self.vertex_buffer
+                .as_ref()
+                .map(|b| b.size() / (4 * mem::size_of::<Vertex>()) as u64)
+        );
 
         let vertex_buffer =
             self.vertex_buffer
